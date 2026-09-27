@@ -43,6 +43,11 @@ class SumCliTest(unittest.TestCase):
         p = run(["1.5", "2"])
         self.assertNotEqual(p.returncode, 0)
 
+    def test_version(self):
+        p = run(["--version"])
+        self.assertEqual(p.stdout, "sum-cli 1.0\n")
+        self.assertEqual(p.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
