@@ -5,14 +5,121 @@ Usage:
   sum-cli 2 3         # prints 5
   sum-cli -7 10       # prints 3
   sum-cli --version   # prints "sum-cli 1.0"
+  sum-cli --read-example RELATIVE_PATH
+                      # prints contents of examples/RELATIVE_PATH
 
 Exits non-zero if the argument count is not exactly 2 or if either
 argument is not a base-10 integer.
+
+--read-example only reads regular files that resolve (following
+symlinks) inside the repository-local examples/ directory; anything
+else (absolute paths, traversal outside examples/, symlink escapes,
+missing files, non-regular files) exits non-zero without printing any
+file contents.
 """
 
+import os
+import stat
 import sys
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 VERSION = "sum-cli 1.0"
+
+# examples/ root is anchored at the directory containing sum-cli itself,
+# not at the current working directory.
+EXAMPLES_ROOT = Path(__file__).resolve().parent / "examples"
+
+
+def read_example(rel_path):
+    """Print the contents of examples/<rel_path>, or exit non-zero.
+
+    Containment is validated before the file is ever opened: the
+    requested path must be relative, must resolve (following symlinks)
+    to a regular file strictly inside the real examples/ root, and must
+    not escape it via absolute paths, parent traversal, or symlinks.
+    """
+    # Reject absolute paths outright so an absolute argument can never
+    # replace the examples/ base during the join below. Check both
+    # POSIX and Windows syntax so backslash-style escapes are covered
+    # too. Also reject empty and NUL-containing arguments.
+    if not rel_path or "\x00" in rel_path:
+        print("sum-cli: --read-example: empty path", file=sys.stderr)
+        return 1
+    if PurePosixPath(rel_path).is_absolute() or PureWindowsPath(rel_path).is_absolute():
+        print(
+            f"sum-cli: --read-example: refusing absolute path: {rel_path!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        candidate = (EXAMPLES_ROOT / rel_path).resolve()
+        real_root = EXAMPLES_ROOT.resolve()
+    except (OSError, ValueError) as exc:
+        print(
+            f"sum-cli: --read-example: invalid path {rel_path!r}: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Containment check on the fully-resolved path. Reject anything that
+    # resolves outside examples/ (covers ../ traversal, nested escapes
+    # like subdir/../../x, and symlinks pointing out of examples/).
+    if candidate != real_root and real_root not in candidate.parents:
+        print(
+            f"sum-cli: --read-example: path escapes examples/: {rel_path!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Resolve() followed every symlink, so stat on the resolved path
+    # describes the final target; require a regular file.
+    try:
+        st = candidate.stat()
+    except OSError as exc:
+        print(
+            f"sum-cli: --read-example: cannot read example: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    if not stat.S_ISREG(st.st_mode):
+        print(
+            f"sum-cli: --read-example: not a regular file: {rel_path!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Open the resolved path (never the raw argument), so a TOCTOU swap
+    # of an intermediate component cannot retarget the read away from
+    # what was validated. Re-verify the fd matches the expected inode
+    # before reading any bytes.
+    try:
+        fd = os.open(candidate, os.O_RDONLY)
+    except OSError as exc:
+        print(
+            f"sum-cli: --read-example: cannot read example: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode) or (fst.st_dev, fst.st_ino) != (
+            st.st_dev,
+            st.st_ino,
+        ):
+            raise OSError("validated path changed before read")
+        with os.fdopen(fd, "rb") as f:
+            data = f.read()
+    except OSError as exc:
+        print(
+            f"sum-cli: --read-example: cannot read example: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return 0
 
 
 def main(argv):
@@ -20,6 +127,8 @@ def main(argv):
     if len(args) == 1 and args[0] == "--version":
         print(VERSION)
         return 0
+    if len(args) == 2 and args[0] == "--read-example":
+        return read_example(args[1])
     if len(args) != 2:
         print(
             f"sum-cli: expected exactly 2 integer arguments, got {len(args)}",
