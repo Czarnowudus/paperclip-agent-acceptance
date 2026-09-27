@@ -2,8 +2,9 @@
 """sum-cli: print the arithmetic sum of exactly two base-10 integer arguments.
 
 Usage:
-  sum-cli 2 3    # prints 5
-  sum-cli -7 10  # prints 3
+  sum-cli 2 3         # prints 5
+  sum-cli -7 10       # prints 3
+  sum-cli --version   # prints "sum-cli 1.0"
 
 Exits non-zero if the argument count is not exactly 2 or if either
 argument is not a base-10 integer.
@@ -11,9 +12,14 @@ argument is not a base-10 integer.
 
 import sys
 
+VERSION = "sum-cli 1.0"
+
 
 def main(argv):
     args = argv[1:]
+    if len(args) == 1 and args[0] == "--version":
+        print(VERSION)
+        return 0
     if len(args) != 2:
         print(
             f"sum-cli: expected exactly 2 integer arguments, got {len(args)}",
