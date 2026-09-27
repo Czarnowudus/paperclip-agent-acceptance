@@ -2,15 +2,16 @@
 
 ## sum-cli
 
-A small CLI that sums numbers.
+Prints the arithmetic sum of exactly two base-10 integer arguments.
 
 ```sh
-./sum-cli 1 2 3        # 6
-./sum-cli 1.5 2.5      # 4.0
-echo "1\n2" | ./sum-cli  # 6  (reads numbers from stdin when no args are given)
+./sum-cli 2 3      # 5
+./sum-cli -7 10    # 3
 ```
 
-Invalid input exits with status 1 and an error on stderr.
+- Wrong argument count (anything other than exactly 2) exits non-zero.
+- Non-integer arguments (e.g. `abc`, `1.5`) exit non-zero.
+- No stdin, flags, or float support — integers only.
 
 ### Tests
 
